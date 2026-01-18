@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
+from contextlib import asynccontextmanager
 import pandas as pd
 from pathlib import Path
 from datetime import date
@@ -17,19 +18,6 @@ import sys
 # add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-app = FastAPI(
-    title="House Price Prediction API",
-    version="1.0.0",
-    description="ML API with model versioning"
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 MODEL_DIR = Path(__file__).parent.parent / "models"
 
 # globals
@@ -38,6 +26,81 @@ preprocessor = None
 model_metadata = None
 registry = None
 executor = None
+
+
+def load_model(version=None, stage="production"):
+    """Load model from registry"""
+    global model, preprocessor, model_metadata, registry
+
+    from model_registry import ModelRegistry
+    from preprocessing import Preprocessor
+
+    if registry is None:
+        registry = ModelRegistry(str(MODEL_DIR / "registry"))
+
+    if version:
+        loaded_model, prep_data, metadata = registry.load("house_price_predictor", version=version)
+    else:
+        loaded_model, prep_data, metadata = registry.load("house_price_predictor", stage=stage)
+
+    model = loaded_model
+    model_metadata = metadata
+
+    preprocessor = Preprocessor()
+    preprocessor.encoders = prep_data['encoders']
+    preprocessor.scaler = prep_data['scaler']
+    preprocessor.feature_cols = prep_data['feature_cols']
+    preprocessor.num_cols = prep_data['num_cols']
+    preprocessor.cat_cols = prep_data['cat_cols']
+
+    return True
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global executor
+
+    print(f"MODEL_DIR: {MODEL_DIR}")
+    print(f"MODEL_DIR exists: {MODEL_DIR.exists()}")
+    registry_path = MODEL_DIR / "registry"
+    print(f"Registry path: {registry_path}")
+    print(f"Registry exists: {registry_path.exists()}")
+
+    if registry_path.exists():
+        import os
+        print(f"Registry contents: {os.listdir(registry_path)}")
+
+    try:
+        load_model(stage="production")
+        print(f"Loaded model: {model_metadata.get('version')} [{model_metadata.get('stage')}]")
+    except Exception as e:
+        import traceback
+        print(f"Warning: could not load model - {e}")
+        traceback.print_exc()
+        print("Run training first: python main.py --train")
+
+    n_workers = max(1, multiprocessing.cpu_count() - 1)
+    executor = ThreadPoolExecutor(max_workers=n_workers)
+
+    yield
+
+    if executor:
+        executor.shutdown(wait=True)
+
+
+app = FastAPI(
+    title="House Price Prediction API",
+    version="1.0.0",
+    description="ML API with model versioning",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class PropertyInput(BaseModel):
@@ -113,67 +176,6 @@ def predict_one(df):
     pred = model.predict(X)[0]
     margin = pred * 0.1
     return pred, pred - margin, pred + margin
-
-
-def load_model(version=None, stage="production"):
-    """Load model from registry"""
-    global model, preprocessor, model_metadata, registry
-
-    from model_registry import ModelRegistry
-    from preprocessing import Preprocessor
-
-    if registry is None:
-        registry = ModelRegistry(str(MODEL_DIR / "registry"))
-
-    if version:
-        loaded_model, prep_data, metadata = registry.load("house_price_predictor", version=version)
-    else:
-        loaded_model, prep_data, metadata = registry.load("house_price_predictor", stage=stage)
-
-    model = loaded_model
-    model_metadata = metadata
-
-    preprocessor = Preprocessor()
-    preprocessor.encoders = prep_data['encoders']
-    preprocessor.scaler = prep_data['scaler']
-    preprocessor.feature_cols = prep_data['feature_cols']
-    preprocessor.num_cols = prep_data['num_cols']
-    preprocessor.cat_cols = prep_data['cat_cols']
-
-    return True
-
-
-@app.on_event("startup")
-async def startup():
-    global executor
-
-    print(f"MODEL_DIR: {MODEL_DIR}")
-    print(f"MODEL_DIR exists: {MODEL_DIR.exists()}")
-    registry_path = MODEL_DIR / "registry"
-    print(f"Registry path: {registry_path}")
-    print(f"Registry exists: {registry_path.exists()}")
-
-    if registry_path.exists():
-        import os
-        print(f"Registry contents: {os.listdir(registry_path)}")
-
-    try:
-        load_model(stage="production")
-        print(f"Loaded model: {model_metadata.get('version')} [{model_metadata.get('stage')}]")
-    except Exception as e:
-        import traceback
-        print(f"Warning: could not load model - {e}")
-        traceback.print_exc()
-        print("Run training first: python main.py --train")
-
-    n_workers = max(1, multiprocessing.cpu_count() - 1)
-    executor = ThreadPoolExecutor(max_workers=n_workers)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    if executor:
-        executor.shutdown(wait=True)
 
 
 @app.get("/")
