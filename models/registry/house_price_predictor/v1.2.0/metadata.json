@@ -1,0 +1,25 @@
+{
+  "version": "v1.2.0",
+  "created_at": "2026-01-18T23:54:22.492457",
+  "model_hash": "46c8362b9fa2",
+  "metrics": {
+    "rmse": 29200.17,
+    "mae": 19243.16,
+    "r2": 0.9839,
+    "mape": 5.05
+  },
+  "params": {
+    "model_type": "XGBRegressor",
+    "n_estimators": 200,
+    "max_depth": 6,
+    "learning_rate": 0.1
+  },
+  "tags": [
+    "xgboost",
+    "lightweight",
+    "low-resource",
+    "n_features=26"
+  ],
+  "stage": "production",
+  "model_type": "XGBRegressor"
+}
