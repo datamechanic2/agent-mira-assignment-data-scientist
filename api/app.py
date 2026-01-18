@@ -202,6 +202,7 @@ async def health():
 async def debug():
     """Debug endpoint to check file system"""
     import os
+    import traceback
 
     result = {
         "cwd": os.getcwd(),
@@ -217,13 +218,32 @@ async def debug():
     if (MODEL_DIR / "registry").exists():
         result["registry_contents"] = os.listdir(MODEL_DIR / "registry")
 
+    # check model version directories
+    model_path = MODEL_DIR / "registry" / "house_price_predictor"
+    if model_path.exists():
+        result["model_versions_dir"] = os.listdir(model_path)
+
+        # check v1.0.1 contents
+        v101_path = model_path / "v1.0.1"
+        if v101_path.exists():
+            result["v1.0.1_contents"] = os.listdir(v101_path)
+            result["v1.0.1_model_exists"] = (v101_path / "model.joblib").exists()
+            result["v1.0.1_preprocessor_exists"] = (v101_path / "preprocessor.joblib").exists()
+
     manifest_path = MODEL_DIR / "registry" / "manifest.json"
     result["manifest_exists"] = manifest_path.exists()
 
-    if manifest_path.exists():
-        import json
-        with open(manifest_path) as f:
-            result["manifest"] = json.load(f)
+    # try to load model and capture error
+    try:
+        from model_registry import ModelRegistry
+        test_registry = ModelRegistry(str(MODEL_DIR / "registry"))
+        test_model, test_prep, test_meta = test_registry.load("house_price_predictor", stage="production")
+        result["test_load"] = "success"
+        result["test_model_type"] = type(test_model).__name__
+    except Exception as e:
+        result["test_load"] = "failed"
+        result["test_load_error"] = str(e)
+        result["test_load_traceback"] = traceback.format_exc()
 
     return result
 
