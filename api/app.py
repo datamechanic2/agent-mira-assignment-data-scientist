@@ -33,7 +33,7 @@ def load_model(version=None, stage="production"):
     global model, preprocessor, model_metadata, registry
 
     from model_registry import ModelRegistry
-    from preprocessing import Preprocessor
+    from preprocessing import Preprocessor, ImprovedPreprocessor
 
     if registry is None:
         registry = ModelRegistry(str(MODEL_DIR / "registry"))
@@ -46,12 +46,22 @@ def load_model(version=None, stage="production"):
     model = loaded_model
     model_metadata = metadata
 
-    preprocessor = Preprocessor()
-    preprocessor.encoders = prep_data['encoders']
-    preprocessor.scaler = prep_data['scaler']
-    preprocessor.feature_cols = prep_data['feature_cols']
-    preprocessor.num_cols = prep_data['num_cols']
-    preprocessor.cat_cols = prep_data['cat_cols']
+    # Detect preprocessor type based on saved data keys
+    if 'target_encoders' in prep_data:
+        # New ImprovedPreprocessor format (v1.1.0+)
+        preprocessor = ImprovedPreprocessor()
+        preprocessor.target_encoders = prep_data['target_encoders']
+        preprocessor.scaler = prep_data['scaler']
+        preprocessor.feature_cols = prep_data['feature_cols']
+        preprocessor.cat_cols = prep_data['cat_cols']
+    else:
+        # Old Preprocessor format (v1.0.x)
+        preprocessor = Preprocessor()
+        preprocessor.encoders = prep_data['encoders']
+        preprocessor.scaler = prep_data['scaler']
+        preprocessor.feature_cols = prep_data['feature_cols']
+        preprocessor.num_cols = prep_data['num_cols']
+        preprocessor.cat_cols = prep_data['cat_cols']
 
     return True
 
@@ -108,7 +118,7 @@ class PropertyInput(BaseModel):
     size: float = Field(..., gt=0)
     bedrooms: int = Field(..., ge=1, le=10)
     bathrooms: int = Field(..., ge=1, le=5)
-    year_built: int = Field(..., ge=1800, le=2025)
+    year_built: int = Field(..., ge=1800, le=2026)
     condition: str
     property_type: str
     date_sold: Optional[date] = None
@@ -229,6 +239,13 @@ async def debug():
             result["v1.0.1_contents"] = os.listdir(v101_path)
             result["v1.0.1_model_exists"] = (v101_path / "model.joblib").exists()
             result["v1.0.1_preprocessor_exists"] = (v101_path / "preprocessor.joblib").exists()
+
+        # check v1.1.0 contents
+        v110_path = model_path / "v1.1.0"
+        if v110_path.exists():
+            result["v1.1.0_contents"] = os.listdir(v110_path)
+            result["v1.1.0_model_exists"] = (v110_path / "model.joblib").exists()
+            result["v1.1.0_preprocessor_exists"] = (v110_path / "preprocessor.joblib").exists()
 
     manifest_path = MODEL_DIR / "registry" / "manifest.json"
     result["manifest_exists"] = manifest_path.exists()

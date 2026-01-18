@@ -176,6 +176,127 @@ class Preprocessor:
         self.cat_cols = data['cat_cols']
 
 
+class ImprovedPreprocessor:
+    """Enhanced preprocessor with target encoding for better performance"""
+
+    def __init__(self):
+        self.target_encoders = {}
+        self.scaler = StandardScaler()
+        self.feature_cols = None
+        self.cat_cols = ['Location', 'Condition', 'Type']
+
+    def _add_features(self, df):
+        df = df.copy()
+
+        # temporal features - MOST IMPORTANT
+        df['year_sold'] = df['Date Sold'].dt.year
+        df['month_sold'] = df['Date Sold'].dt.month
+        df['quarter'] = df['Date Sold'].dt.quarter
+        df['day_of_year'] = df['Date Sold'].dt.dayofyear
+
+        # days since reference (captures price trend)
+        ref_date = pd.Timestamp('2020-01-01')
+        df['days_since_2020'] = (df['Date Sold'] - ref_date).dt.days
+
+        # property age
+        df['property_age'] = df['year_sold'] - df['Year Built']
+        df['property_age'] = df['property_age'].clip(lower=0)
+
+        # room features
+        df['total_rooms'] = df['Bedrooms'] + df['Bathrooms']
+        df['bath_ratio'] = df['Bathrooms'] / df['Bedrooms'].replace(0, 1)
+        df['bed_bath_product'] = df['Bedrooms'] * df['Bathrooms']
+
+        # size features
+        df['size_per_bedroom'] = df['Size'] / df['Bedrooms'].replace(0, 1)
+        df['size_per_room'] = df['Size'] / df['total_rooms'].replace(0, 1)
+        df['size_squared'] = df['Size'] ** 2
+        df['log_size'] = np.log1p(df['Size'])
+
+        # price trend interaction (size * time)
+        df['size_time_interaction'] = df['Size'] * df['days_since_2020']
+
+        # age interactions
+        df['age_size_interaction'] = df['property_age'] * df['Size']
+        df['is_new_construction'] = (df['property_age'] <= 2).astype(int)
+        df['is_recent'] = (df['property_age'] <= 5).astype(int)
+
+        # decade
+        df['decade_built'] = (df['Year Built'] // 10) * 10
+
+        # season
+        df['is_spring_summer'] = df['month_sold'].isin([3, 4, 5, 6, 7, 8]).astype(int)
+
+        # year sold as numeric for trend
+        df['year_sold_numeric'] = df['year_sold'] - 2020
+
+        return df
+
+    def _target_encode(self, df, y=None, fit=True):
+        df = df.copy()
+
+        for col in self.cat_cols:
+            if col not in df.columns:
+                continue
+
+            if fit:
+                target_mean = pd.Series(y, index=df.index).groupby(df[col]).mean()
+                self.target_encoders[col] = target_mean.to_dict()
+                global_mean = y.mean()
+                self.target_encoders[f'{col}_global_mean'] = global_mean
+
+            encoding_map = self.target_encoders[col]
+            global_mean = self.target_encoders.get(f'{col}_global_mean', 0)
+            df[f'{col}_encoded'] = df[col].map(encoding_map).fillna(global_mean)
+            df = df.drop(columns=[col])
+
+        return df
+
+    def fit_transform(self, df, target='Price'):
+        df = df.dropna(subset=[target])
+        y = df[target].values
+
+        df = self._add_features(df)
+        df = self._target_encode(df, y, fit=True)
+
+        drop_cols = ['Property ID', 'Date Sold', 'Price', 'Year Built']
+        X = df.drop(columns=[c for c in drop_cols if c in df.columns])
+        X = X.select_dtypes(include=[np.number])
+        X = X.fillna(X.median())
+
+        self.feature_cols = X.columns.tolist()
+
+        X_scaled = self.scaler.fit_transform(X)
+
+        return X_scaled, y
+
+    def transform(self, df):
+        df = self._add_features(df)
+        df = self._target_encode(df, fit=False)
+
+        drop_cols = ['Property ID', 'Date Sold', 'Price', 'Year Built']
+        X = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
+        X = X.reindex(columns=self.feature_cols, fill_value=0)
+        X = X.fillna(0)
+
+        return self.scaler.transform(X)
+
+    def save(self, path):
+        joblib.dump({
+            'target_encoders': self.target_encoders,
+            'scaler': self.scaler,
+            'feature_cols': self.feature_cols,
+            'cat_cols': self.cat_cols
+        }, path)
+
+    def load(self, path):
+        data = joblib.load(path)
+        self.target_encoders = data['target_encoders']
+        self.scaler = data['scaler']
+        self.feature_cols = data['feature_cols']
+        self.cat_cols = data['cat_cols']
+
+
 if __name__ == "__main__":
     data_path = Path(__file__).parent.parent / "Case Study 1 Data (1).xlsx"
 
