@@ -147,11 +147,23 @@ def load_model(version=None, stage="production"):
 async def startup():
     global executor
 
+    print(f"MODEL_DIR: {MODEL_DIR}")
+    print(f"MODEL_DIR exists: {MODEL_DIR.exists()}")
+    registry_path = MODEL_DIR / "registry"
+    print(f"Registry path: {registry_path}")
+    print(f"Registry exists: {registry_path.exists()}")
+
+    if registry_path.exists():
+        import os
+        print(f"Registry contents: {os.listdir(registry_path)}")
+
     try:
         load_model(stage="production")
         print(f"Loaded model: {model_metadata.get('version')} [{model_metadata.get('stage')}]")
     except Exception as e:
+        import traceback
         print(f"Warning: could not load model - {e}")
+        traceback.print_exc()
         print("Run training first: python main.py --train")
 
     n_workers = max(1, multiprocessing.cpu_count() - 1)
