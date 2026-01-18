@@ -1,0 +1,24 @@
+{
+  "version": "v1.0.1",
+  "created_at": "2026-01-18T10:51:11.288741",
+  "model_hash": "181f4884a8dc",
+  "metrics": {
+    "rmse": 154937.65035491015,
+    "mae": 115106.14837653025,
+    "r2": 0.5457409398272467,
+    "mape": 27.282054639206592
+  },
+  "params": {
+    "learning_rate": 0.05,
+    "max_depth": 4,
+    "n_estimators": 200,
+    "num_leaves": 31
+  },
+  "tags": [
+    "lgbm",
+    "tuned",
+    "n_features=17"
+  ],
+  "stage": "development",
+  "model_type": "LGBMRegressor"
+}
