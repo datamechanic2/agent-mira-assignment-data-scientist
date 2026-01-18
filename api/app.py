@@ -196,6 +196,36 @@ async def health():
     }
 
 
+@app.get("/debug")
+async def debug():
+    """Debug endpoint to check file system"""
+    import os
+
+    result = {
+        "cwd": os.getcwd(),
+        "model_dir": str(MODEL_DIR),
+        "model_dir_exists": MODEL_DIR.exists(),
+        "registry_dir": str(MODEL_DIR / "registry"),
+        "registry_exists": (MODEL_DIR / "registry").exists(),
+    }
+
+    if MODEL_DIR.exists():
+        result["model_dir_contents"] = os.listdir(MODEL_DIR)
+
+    if (MODEL_DIR / "registry").exists():
+        result["registry_contents"] = os.listdir(MODEL_DIR / "registry")
+
+    manifest_path = MODEL_DIR / "registry" / "manifest.json"
+    result["manifest_exists"] = manifest_path.exists()
+
+    if manifest_path.exists():
+        import json
+        with open(manifest_path) as f:
+            result["manifest"] = json.load(f)
+
+    return result
+
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(prop: PropertyInput):
     if not model:
