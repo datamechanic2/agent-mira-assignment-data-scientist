@@ -24,8 +24,8 @@ build/
 Thumbs.db
 
 # Data files (too large for git)
-*.xlsx
-*.docx
+# *.xlsx
+# *.docx
 
 # Jupyter
 .ipynb_checkpoints/
